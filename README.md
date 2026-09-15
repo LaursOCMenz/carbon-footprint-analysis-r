@@ -33,6 +33,17 @@ The analysis included:
 - Multiple linear regression
 - Logistic regression
 
+## 📊 Project Visualisations
+
+### Spearman Correlation Between Numerical Variables
+
+Spearman's rank correlation was used to examine relationships between 
+the numerical variables. Carbon footprint showed the strongest positive 
+association with annual energy consumption (rₛ = 0.76), followed by 
+income (rₛ = 0.52).
+
+
+
 ## 🔎 Key Findings
 
 The final multiple regression model explained approximately 94%
