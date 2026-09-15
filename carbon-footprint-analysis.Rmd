@@ -1,0 +1,270 @@
+---
+title: "Household Carbon Footprint Analysis"
+author: "Laura Osei-Mensah"
+output: html_document
+---
+
+Project Overview 
+
+This project investigates factors associated with household carbon footprint and recycling behaviour using R. The analysis combines exploratory data analysis, data visualisation and statistical modelling to examine relationships between household characteristics, environmental behaviours and carbon footprint.
+
+The project addresses two main questions:
+
+Which household characteristics are associated with carbon footprint?
+
+Which factors are associated with the likelihood of regularly recycling?
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(mgcv)
+library(car)
+```
+
+
+# 1. Load dataset
+
+Data availability: The dataset used for this analysis was provided as part of an academic assessment and is not included in this public repository. The analysis below uses the assigned sample from the original dataset and demonstrates the data cleaning, exploratory analysis and statistical modelling undertaken as part of the project.
+
+```{r}
+carbon <- read.csv("carbon.csv")
+```
+
+
+## 1.2 Data quality plan
+ 
+To assess the quality of the data, I reviewed all variables against the metadata to confirm their definitions, datatypes and relevance to the analysis, and to identify any inconsistencies or contradictions within the data set.
+
+The household_size and number_adults variables were examined to ensure all values were integers, to assess missing values, and to identify unrealistic values such as negative numbers or extreme outliers that could indicate data entry errors.
+
+The annual_energy_consumption and carbon_footprint variables were checked for missing values, and to confirm that observations fell within the ranged specified by the metadata. 
+
+The income variable was assessed for missingness, negative values and extreme outliers that may indicate data quality issues.
+
+The environmental_concern_score variable was examined for missing values, to confirm that all values were integers, and to ensure that values fell into the range specified in the metadata.
+
+The binary variables recycles_regularly, uses_public_transport and recycles_regularly_question were checked for missingness and verified to contain only binary values, as defined in the metadata.
+
+Finally, categorical variables diet_type and home_type was checked for missingness, spelling errors, and that there were four different categories within both columns as observed in the metadata.
+
+## 1.3 Data quality findings
+
+### Issue 1
+
+When the home_type variable was initially converted to a factor, eight levels were observed, whereas the metadata indicated four levels should be present. I therefore investigated each unique observation within the variable and found that several categories were duplicated due to wording variations for example "Terraced" and "Terrace".
+
+To correct this, I temporary treated the variable as a character to re-code the category labels and avoid constraints imposed by existing factor levels. 
+
+
+```{r}
+# unique function to view each distinct observation (R Programming 101,2021)
+unique(carbon$home_type)
+```
+
+
+### Issue 2
+
+Using the summary() function to examine the numeric variables, I noticed the minimum value for annual energy consumption was negative (-650). According to the metadata, this value was incorrect, as all values should fall between 1000 and 9000. I conducted further investigation by filtering the data to identify any additional values below 1000 and to determine where these values appeared in the data set, in order to gain a clearer understanding. I found a further four rows with negative values.
+
+```{r}
+summary(carbon)
+
+carbon %>% 
+  filter(annual_energy_consumption < 1000) # (R Programming 101,2021)
+```
+
+### Issue 3
+
+To check for missing values across the data set, I examined the number of NAs in each column. I found that income was the only variable containing missing values. I then filtered the data to identify where the missing entries occurred, and confirmed that the other variables appeared to be complete 
+
+```{r}
+colSums(is.na(carbon))
+carbon %>% 
+  filter(!complete.cases(.)) # To show the missing values within the data set (R Programming 101,2021)
+```
+
+
+## 1.4 Data cleaning  
+ 
+### Addressing Issue 1
+
+To address Issue 1, I used the ifelse() function to resolve the duplicated observation categories. All observations labelled "Terrace" were change to "Terraced", "flat" to "Flat", "detached" to "Detached" and "semi-detached" to "Semi-detached".
+
+This approach was justified as it ensures consistency within categorical variables, which is essential for accurate grouping and analysis. I considered using mutate function but because corrections were not complex and required simple conditional replacements, I found ifelse() to be sufficient. 
+
+```{r}
+# Creating a new variable with corrections
+carbon$home_type <- ifelse(carbon$home_type == "Terrrace", "Terraced",
+                            ifelse(carbon$home_type == "flat", "Flat",
+                              ifelse(carbon$home_type == "detatched","Detached",
+                                     ifelse(carbon$home_type == "semi-detached", "Semi-detached",                                              carbon$home_type))))
+
+# Checking the observations within home_type variable
+unique(carbon$home_type)
+
+```
+
+### Addressing Issue 2
+
+For issue 2, I created a new variable that contained the data frame with the four rows where annual_energy_consumption had negative values removed.This approach was used because the number of affected rows were small and retaining invalid values could bias the analysis. An alternative approach would've been to impute values using the mean or median, but this could have distorted the relationship between variables.
+
+```{r}
+carbon_ann_rmv <- carbon %>% 
+  filter(annual_energy_consumption > 0) 
+```
+
+### Addressing Issue 3
+
+To address issue 3, I created a new variable with all NA values removed. This was necessary for logistic regression, which required complete cases. The carbon_ann-rmv dataset was retained for multiple regression using the step function, as it can handle NAs without requiring row removal. 
+
+```{r}
+carbon_no_na <- carbon_ann_rmv[complete.cases(carbon_ann_rmv),] 
+```
+
+# 2. Exploratory Data Analysis (EDA)
+
+The variables carbon_footprint and recycles_regularly were central to my analysis. I examined the distribution of carbon footprint using histograms to assess shape and outliers. Relationships with numerical variables were explored using a Generalised Additive Model (GAM), correlations, scatter plots, and a regression tree, while associations with categorical variables were examined using boxplots and t-tests. Recycling behaviour was analysed using frequency comparisons, t-tests, aggregate functions, chi-squared tests, a mosaic plot. 
+
+### Element 1
+
+I used Spearman's rank correlation to assess associations between numerical variables and carbon footprint.
+
+```{r}
+# Putting the numeric variables in carbon_num variable 
+carbon_num <- carbon_ann_rmv %>% 
+  select(household_size, annual_energy_consumption,carbon_footprint,environmental_concern_score,income,number_adults) 
+
+cor(carbon_num, method = "spearman", use="complete.obs")
+```
+The results indicate a strong positive correlation (0.76) between carbon footprint and annual energy consumption, suggesting households with higher energy use tend to have larger carbon footprints.A moderately strong correlation between carbon footprint and income (0.51), indicating that higher income is associated with increased carbon emissions. 
+
+Additionally, a strong correlation was identified between household size and number of adults (0.99), suggesting multicollinearity between these variables. Therefore only one of these variables were used in my model, Overall, the analysis was informative as it highlighted key drivers of carbon footprint and guided variable selection.
+
+### Element 2
+
+I used a GAM to examine potential non-linear relationships between carbon footprint and key numerical explanatory variables. Household size, number of adults, and environmental concern score were excluded as smooth terms because their limited discrete ranges made smoothing inappropriate.
+
+```{r}
+gam_model <- gam(carbon_footprint ~ s(income) + s(annual_energy_consumption),data = carbon_ann_rmv)
+summary(gam_model)
+plot(gam_model)
+```
+The income smooth suggests a moderate non-linear relationship, while annual energy consumption shows a strong near-linear effect. This analysis supports exploring quadratic terms for income and annual energy consumption in subsequent modelling.
+
+### Element 3
+
+```{r}
+
+# creating a new variable to rename recycling observations from Yes/No to Non-Recycler/Recycles
+carbon$recyclesNew <- ifelse(carbon$recycles_regularly_question == "Yes", "Recycles","Non-Recycler")
+                             
+# Mosaic plot
+mosaicplot(~carbon$recyclesNew  + carbon$uses_public_transport, 
+           main = "Relationship Between Recycling Habits and Public Transport Use",
+           xlab = "Recycles Regularly",
+           ylab = "Uses Public Transport",
+           color = c("lightpink", "purple"),
+           data = carbon) # (Ripley,2022)
+
+```
+The mosaic plot shows individuals who recycle regularly are more likely to use public transport compared with non-recyclers.This suggests that environmentally conscious behaviours are linked, with individuals who recycle being more likely to use public transport. This visualisation is informative as it highlights patterns of association between two categorical variables that are not easily identified from summary tables alone. 
+
+
+# 3. Modelling
+
+I used multiple linear regression with step wise model selection to obtain a minimum adequate model, identifying explanatory variables that significantly influence carbon footprint while removing unnecessary complexity.
+
+I initially considered numerical variables, including annual_energy_consumption, income, household_size, number_adults, and environmental_concern_score. Findings from the regression tree conducted during EDA suggested potential interaction effects between income and annual energy consumption, so an interaction term between these variables was included in the model. GAM plots indicated a non-linear relationship between income and carbon footprint, with an estimated degrees of freedom (edf) of approximately six. As a result, income was included as a quadratic term. Annual energy consumption showed a strong near-linear relationship with slight curvature (edf approximately 3), so a quadratic term was also included.
+
+Household size and number of adults were highly correlated, indicating potential multicollinearity. To address this, I fitted separate models including each variable individually. Although some observations recorded zero adults, this was considered plausible (for example, older teenagers living independently), and the variable was therefore included in the modelling process. An interaction term between annual energy consumption and household size or number of adults was also included, as EDA scatter plots suggested that the relationship between energy consumption and carbon footprint varied across these groups.
+
+Categorical variables included recycles_regularly, uses_public_transport, diet_type, and home_type, all of which were converted to factor variables. Environmental concern score was re-coded into a categorical variable with three levels (low, medium, high) and stored as score.group. While environmental concern was not significant as a numerical predictor of carbon footprint (shown by regression tree in EDA), the grouped variable proved useful in analysing recycling behaviour and showed a significant association.
+
+Model selection was performed using step wise regression, allowing for the identification of a model that balanced goodness of fit and complexity. Diagnostic checks indicated some heteroscedasticity and slight deviations in the tails of the Q–Q plot. A log transformation of carbon footprint was explored; however, this worsened model diagnostics. Therefore, the original model was considered the more appropriate model.
+
+## Model for carbon_footprint.
+ 
+### Initial Model
+
+```{r}
+
+# creating a new variable for environmental_concern_score
+carbon_ann_rmv$score.group <- ifelse(carbon_ann_rmv$environmental_concern_score <=4, "Low",
+                             ifelse(carbon_ann_rmv$environmental_concern_score < 8, "Medium", "High"))
+
+# changing the below into factor variable before using in my model
+carbon_ann_rmv$score.group <- factor((carbon_ann_rmv$score.group), 
+                             levels = c("High","Medium", "Low"))
+carbon_ann_rmv$home_type <- as.factor(carbon_ann_rmv$home_type)
+carbon_ann_rmv$uses_public_transport <- as.factor(carbon_ann_rmv$uses_public_transport)
+carbon_ann_rmv$diet_type <- as.factor(carbon_ann_rmv$diet_type)
+carbon_ann_rmv$recycles_regularly_question <- as.factor(carbon_ann_rmv$recycles_regularly_question)
+
+# starting model
+
+carbon.model1 <- lm(carbon_footprint~annual_energy_consumption*income + I(annual_energy_consumption^2) + I(income^2) + household_size*annual_energy_consumption + recycles_regularly_question + uses_public_transport + diet_type + score.group + home_type, data = carbon_ann_rmv)
+```
+
+### Proposed model
+
+```{r}
+carbon.model2 <- step(carbon.model1)
+```
+
+### Proposed model diagnostics
+```{r}
+plot(carbon.model2)
+```
+Overall, residuals are acceptable, though Q–Q plot tails deviate and the residuals-fitted plot suggests mild heteroscedasticity.
+
+### Proposed model intepretation
+
+```{r}
+summary(carbon.model2)
+```
+The adjusted R squared is 0.94, indicating the model explains 94% of the variation in carbon footprint. All predictors are statistically significant. Energy consumption and income increase carbon footprint, but their negative quadratic terms suggest a decreasing effect. Interaction between energy consumption and income has a decreasing effect on carbon footprint. I found this model appropriate because it explains a large proportion of the variance while being less complex than Model 1, achieving a good balance between simplicity and explanatory power.
+
+# 4. Model the likelihood of being a household that regularly recycles.
+
+To model whether a household regularly recycles, I used logistic regression, as the response variable recycles_regularly is binary. The analysis was conducted using a model that excluded income and annual_energy_consumption. Previous models indicated that these variables did not significantly affect recycling behaviour, and because they contained missing or invalid values, excluding them from the model allowed a larger number of observations to be retained. I included environmental concern score as a categorical variable rather than numeric. Fisher’s exact test indicated a significant association between environmental concern and recycling behaviour, with households reporting higher concern levels being more likely to recycle regularly. This justified grouping the score into categories for inclusion in the model.
+
+
+A chi-squared test showed a significant association between recycling behaviour and public transport use, suggesting that households using public transport were more likely to recycle. This relationship was further supported by the mosaic plot, which provided a clear visual indication of dependence between the variables. As a result, uses_public_transport was included as an explanatory variable.
+
+Household size was included instead of number of adults due to high correlation between the two variables, which indicated potential multicollinearity. 
+
+A limitation of the model is the relatively small sample size (around 240 observations), which may limit statistical power and affect the stability of coefficient estimates. Also, the data are the model identifies associations rather than causal effects.
+
+
+### Proposed Model
+
+```{r}
+# Using the data set stored in the carbon variable that has no rows removed 
+
+# creating a new variable for environmental_concern_score
+carbon$score.group <- ifelse(carbon$environmental_concern_score <=4, "Low",
+                             ifelse(carbon$environmental_concern_score < 8, "Medium", "High"))
+
+# changing the below into factor variable before using in my model
+carbon$score.group <- factor((carbon$score.group), 
+                             levels = c("High","Medium", "Low"))
+carbon$home_type <- as.factor(carbon$home_type)
+carbon$uses_public_transport <- as.factor(carbon$uses_public_transport)
+carbon$diet_type <- as.factor(carbon$diet_type)
+carbon$recycles_regularly_question <- as.factor(carbon$recycles_regularly_question)
+
+recycle.model <- step(glm(recycles_regularly~annual_energy_consumption + uses_public_transport + diet_type + carbon_footprint + score.group + home_type, family = binomial, data = carbon))
+```
+
+### Model intepretation
+```{r}
+summary(recycle.model)
+exp(coef(recycle.model))
+vif(recycle.model)
+```
+The results indicate that use of public transport is the strongest predictor of regular recycling, with a highly significant effect. The exponentiated coefficient suggests that households using public transport are approximately 5.72 times more likely to recycle regularly compared to those who do not.
+
+Housing type is also an important predictor. Households living in semi-detached houses are approximately 3.47 times more likely to recycle regularly than those in detached houses (the baseline category), while households living in flats are approximately 3.40 times more likely to recycle regularly.
+
+Although score_group showed a significant association with recycling behaviour in univariate analysis, its coefficients were not statistically significant in the multivariable logistic regression model. This highlights a limitation of the model, as relationships that appear significant on their own may weaken when other predictors are included. The variable was retained by stepwise selection due to a reduction in AIC. Low VIF values indicate that multicollinearity is not a concern.
+
