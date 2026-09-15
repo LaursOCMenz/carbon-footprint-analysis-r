@@ -12,5 +12,3 @@ data visualisation and statistical modelling.
 
 1. Which household characteristics are associated with carbon footprint?
 2. Which factors are associated with the likelihood of regularly recycling?
-
-...
