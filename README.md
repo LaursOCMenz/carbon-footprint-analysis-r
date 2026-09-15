@@ -42,6 +42,7 @@ the numerical variables. Carbon footprint showed the strongest positive
 association with annual energy consumption (rₛ = 0.76), followed by 
 income (rₛ = 0.52).
 
+![Spearman correlation heatmap](Figures/correlation-heatmap.png)
 
 
 ## 🔎 Key Findings
