@@ -51,7 +51,7 @@ transport use. Individuals who recycled regularly were more likely to use
 public transport, suggesting an association between these environmental
 behaviours.
 
-![Recycling habits and public transport use](recycling-public-transport.png)
+![Recycling habits and public transport use](Figures/recycling-public-transport.png)
 
 
 ### Multiple Linear Regression Model Diagnostics
